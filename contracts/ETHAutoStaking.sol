@@ -18,10 +18,10 @@ contract ETHAutoStaking is AccessControl, IAutoStaking {
     using SafeMath for uint256;
 
     struct Settings {
-        uint16 MIN_AUTO_STAKE_STEPS; // 90
-        uint16 STAKE_BONUS; // 20
-        uint16 INFLATION_RATE; // 12
-        uint16 INFLATION_RATE_DIVIDER; // 364
+        uint256 MIN_AUTO_STAKE_STEPS; // 90
+        uint256 STAKE_BONUS; // 20
+        uint256 INFLATION_RATE; // 12
+        uint256 INFLATION_RATE_DIVIDER; // 364
     }
 
     struct Addresses {
@@ -93,10 +93,10 @@ contract ETHAutoStaking is AccessControl, IAutoStaking {
     }
 
     function init(
-        uint16 _minimumAutoStakeSteps,
-        uint16 _stakeBonus,
-        uint16 _inflationRate,
-        uint16 _inflationRateDivider,
+        uint256 _minimumAutoStakeSteps,
+        uint256 _stakeBonus,
+        uint256 _inflationRate,
+        uint256 _inflationRateDivider,
         address _pyxToken,
         address _pyxStaking,
         address _uniswap,
@@ -124,7 +124,7 @@ contract ETHAutoStaking is AccessControl, IAutoStaking {
         renounceRole(SETTER_ROLE, msg.sender);
     }
 
-    function ethStake(uint16 _stakeSteps, uint256 _pyxToGet) external payable {
+    function ethStake(uint256 _stakeSteps, uint256 _pyxToGet) external payable {
         require(
             _stakeSteps >= SETTINGS.MIN_AUTO_STAKE_STEPS,
             'ETHAutoStaking[ethStake]: _stakeSteps < SETTINGS.MIN_AUTO_STAKE_STEPS'
@@ -144,7 +144,7 @@ contract ETHAutoStaking is AccessControl, IAutoStaking {
 
         // transfer the slippage token to the recipient
         if (slippagePYX > 0) {
-            totalSlippagePYX = totalSlippagePYX + slippagePYX;
+            totalSlippagePYX = totalSlippagePYX.add(slippagePYX);
         }
 
         // state - update
@@ -172,7 +172,7 @@ contract ETHAutoStaking is AccessControl, IAutoStaking {
         );
         ADDRESSES.PYX_TOKEN.mint(ADDRESSES.RECIPIENT, slippagePYXLeft);
 
-        withdrawnSlippagePYX = withdrawnSlippagePYX + slippagePYXLeft;
+        withdrawnSlippagePYX = withdrawnSlippagePYX.add(slippagePYXLeft);
 
         // [event]
         emit WithdrawSlippagePYX(
@@ -191,7 +191,7 @@ contract ETHAutoStaking is AccessControl, IAutoStaking {
         emit AddForSalePYX(msg.sender, _pyx, totalForSalePYX);
     }
 
-    function addInflatedForSalePYX(uint16 _stakeSteps, uint256 _pyx)
+    function addInflatedForSalePYX(uint256 _stakeSteps, uint256 _pyx)
         external
         override
         onlyPYXAdder
@@ -199,7 +199,7 @@ contract ETHAutoStaking is AccessControl, IAutoStaking {
         _addInflatedForSalePYX(_stakeSteps, _pyx);
     }
 
-    function _addInflatedForSalePYX(uint16 _stakeSteps, uint256 _pyx) private {
+    function _addInflatedForSalePYX(uint256 _stakeSteps, uint256 _pyx) private {
         uint256 inflatedPYX = getInflatedPYXAmount(_stakeSteps, _pyx);
         totalForSalePYX = totalForSalePYX.add(inflatedPYX);
 
@@ -207,14 +207,14 @@ contract ETHAutoStaking is AccessControl, IAutoStaking {
         emit AddInflatedForSalePYX(msg.sender, inflatedPYX, totalForSalePYX);
     }
 
-    function getInflatedPYXAmount(uint16 _stakeSteps, uint256 _pyx)
+    function getInflatedPYXAmount(uint256 _stakeSteps, uint256 _pyx)
         public
         view
         returns (uint256)
     {
         return
-            (_pyx * _stakeSteps * SETTINGS.INFLATION_RATE).div(
-                SETTINGS.INFLATION_RATE_DIVIDER * 100
+            (_pyx.mul(_stakeSteps).mul(SETTINGS.INFLATION_RATE)).div(
+                SETTINGS.INFLATION_RATE_DIVIDER.mul(100)
             );
     }
 

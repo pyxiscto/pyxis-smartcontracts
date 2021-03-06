@@ -9,6 +9,7 @@ import './interfaces/ICMPSToken.sol';
 import './interfaces/IPYXToken.sol';
 import './interfaces/IPYXStaking.sol';
 
+/** A contract to swap CMPS(Presale token) to PYX(Main token) */
 contract CMPSToPYXSwapper is AccessControl {
     using SafeMath for uint256;
 
@@ -16,7 +17,7 @@ contract CMPSToPYXSwapper is AccessControl {
         uint256 STEP_SECONDS;
         uint256 START_DATE;
         uint256 END_DATE;
-        uint256 TOTAL_CMPS_SUPPLY; // wei
+        uint256 TOTAL_CMPS_SUPPLY; // WEI Unit
     }
 
     struct Addresses {
@@ -43,7 +44,7 @@ contract CMPSToPYXSwapper is AccessControl {
     Addresses public ADDRESSES;
 
     // states
-    uint256 public totalSwappedCMPS; // wei
+    uint256 public totalSwappedCMPS; // WEI Unit
 
     bool public unswappedCMPSMoved;
 
@@ -64,10 +65,10 @@ contract CMPSToPYXSwapper is AccessControl {
         address _cmpsToken,
         address _pyxToken,
         address _pyxStaking,
-        uint256 _stepSeconds, // the step periond in seconds.
+        uint256 _stepSeconds, // the step period in seconds.
         uint256 _startDate, // start time for conversion period.
         uint256 _endDate, // end time for conversion period.
-        uint256 _totalCMPSSupply // the total of all CMPS tokens.
+        uint256 _totalCMPSSupply // WEI Unit - the total of all CMPS tokens.
     ) external onlySetter {
         ADDRESSES.CMPS_TOKEN = ICMPSToken(_cmpsToken);
         ADDRESSES.PYX_TOKEN = IPYXToken(_pyxToken);
@@ -82,10 +83,7 @@ contract CMPSToPYXSwapper is AccessControl {
     }
 
     /**
-     * swap This function change CMPS to PYX. The swap can be used for a limited amount of time
-     * between the start and end period there is a penalty. The earlier swap is used the better for
-     * the user.
-     * the CMPS tokens are burned when converted.
+     * Swap CMPS to PYX. Late swap penalty is increased 1% per day.
      */
     function swap(uint256 _cmps) external {
         require(!unswappedCMPSMoved, 'CMPSSwapper[swap]: unswappedCMPSMoved');
@@ -93,18 +91,18 @@ contract CMPSToPYXSwapper is AccessControl {
 
         // adjust the amount to mint using the penalty rate.
         uint256 penaltyRate = getPenaltyRate();
-        uint256 penaltyCMPS = (_cmps * penaltyRate) / 100;
+        uint256 penaltyCMPS = _cmps.mul(penaltyRate).div(100);
         uint256 toMintPYX = _cmps.sub(penaltyCMPS);
         address sender = msg.sender;
 
-        // state - update
-        totalSwappedCMPS = totalSwappedCMPS + _cmps;
-
-        // cmps - burn
+        // [state] - update
+        totalSwappedCMPS = totalSwappedCMPS.add(_cmps);
+        // [burn] - CMPS
         ADDRESSES.CMPS_TOKEN.burn(sender, _cmps);
-        // pyx - mint
+        // [mint] - PYX
         ADDRESSES.PYX_TOKEN.mint(sender, toMintPYX);
 
+        // move penalty to staking reward pool
         if (penaltyCMPS > 0) {
             ADDRESSES.PYX_STAKING.contractAddPYXToPool(penaltyCMPS);
         }
@@ -139,11 +137,6 @@ contract CMPSToPYXSwapper is AccessControl {
         unswappedCMPSMoved = true;
     }
 
-    /**
-     * calculate a penalty in percent. if called  before the penalty period then there is
-     * no penalty. if called after end period then 100% penalty. and during the period the penalty is calculated
-     * by the percentage of time the current date is from the start time to end time of the penalty period.
-     */
     function getPenaltyRate() public view returns (uint256) {
         uint256 blockTime = block.timestamp;
 

@@ -9,6 +9,7 @@ import '@openzeppelin/contracts/math/SafeMath.sol';
 import './interfaces/IPYXToken.sol';
 import './interfaces/IPYXStaking.sol';
 
+/** Main token of Pyxis.network */
 contract PYXToken is IPYXToken, IERC20, AccessControl {
     using SafeMath for uint256;
     using EnumerableSet for EnumerableSet.AddressSet;
@@ -37,20 +38,20 @@ contract PYXToken is IPYXToken, IERC20, AccessControl {
     string public constant name = 'PYXIS';
     string public constant symbol = 'PYX';
     uint8 public constant decimals = 18;
-    uint8 public SELL_FEES; // 3
+    uint256 public SELL_FEES; // 3
 
     IPYXStaking public PYX_STAKING;
 
     EnumerableSet.AddressSet private recipientContractAddresses;
     EnumerableSet.AddressSet private senderContractAddresses;
 
-    /* Additional constants */
+    /* additional constants */
     bytes32 public constant MINTER_ROLE = keccak256('MINTER_ROLE'); // only smart contracts
     bytes32 public constant SETTER_ROLE = keccak256('SETTER_ROLE'); // renounce after init
     bytes32 public constant ADDRESS_MANAGER_ROLE =
         keccak256('ADDRESS_MANAGER_ROLE'); // need this to extend the ecosystem (add remove contract addresses)
 
-    /* Additional modifiers */
+    /* additional modifiers */
     modifier onlyMinter() {
         require(
             hasRole(MINTER_ROLE, msg.sender),
@@ -81,9 +82,9 @@ contract PYXToken is IPYXToken, IERC20, AccessControl {
         _setupRole(SETTER_ROLE, msg.sender);
     }
 
-    /* Additional methods */
+    /* additional methods */
     function init(
-        uint8 _sellFees,
+        uint256 _sellFees,
         uint256 _liquidityAmount,
         address _recipient,
         address _pyxStaking,
@@ -92,20 +93,24 @@ contract PYXToken is IPYXToken, IERC20, AccessControl {
         SELL_FEES = _sellFees;
         PYX_STAKING = IPYXStaking(_pyxStaking);
 
-        for (uint256 idx = 0; idx < _minterAccounts.length; idx = idx + 1) {
+        /* only smart contracts can mint the token */
+        for (uint256 idx = 0; idx < _minterAccounts.length; idx = idx.add(1)) {
             _setupRole(MINTER_ROLE, _minterAccounts[idx]);
         }
 
         // liquidity amount(eth unit) to the recipient to add the liquidity
-        _mint(_recipient, _liquidityAmount * 1e18);
+        _mint(_recipient, _liquidityAmount.mul(1e18));
 
+        // revoke setter role
         renounceRole(SETTER_ROLE, msg.sender);
     }
 
+    /** only smart contracts can mint the token */
     function mint(address _to, uint256 _amount) external override onlyMinter {
         _mint(_to, _amount);
     }
 
+    /** only smart contracts can burn the token */
     function burn(address _from, uint256 _amount) external override onlyMinter {
         _burn(_from, _amount);
     }
@@ -175,7 +180,56 @@ contract PYXToken is IPYXToken, IERC20, AccessControl {
         return senderContractAddresses.at(idx);
     }
 
-    /* Default methods */
+    /* modified methods */
+    function _transfer(
+        address sender,
+        address recipient,
+        uint256 amount
+    ) internal virtual {
+        require(sender != address(0), 'ERC20: transfer from the zero address');
+        require(recipient != address(0), 'ERC20: transfer to the zero address');
+
+        balanceOf[sender] = balanceOf[sender].sub(
+            amount,
+            'ERC20: transfer amount exceeds balance'
+        );
+
+        address originAddress = tx.origin;
+
+        // buy order - recipient is the same as a person who creates the transaction.
+        // * exclude smart contract addresses in our system - e.g., auto staking contract
+        if (
+            originAddress == recipient ||
+            recipientContractAddresses.contains(recipient) ||
+            senderContractAddresses.contains(sender)
+        ) {
+            balanceOf[recipient] = balanceOf[recipient].add(amount);
+        }
+        // sell order - person who starts the transaction send it to someone else.
+        else {
+            uint256 feesAmount = amount.mul(SELL_FEES).div(100);
+            balanceOf[recipient] = balanceOf[recipient].add(
+                amount.sub(feesAmount)
+            );
+            // fees amount will be locked in the interest pool, so we burn it here
+            totalSupply = totalSupply.sub(feesAmount);
+
+            // half of the fees will be added to the staking reward pool
+            // another half will be burned
+            PYX_STAKING.contractAddPYXToPool(feesAmount.div(2));
+            emit AddSellingFees(
+                originAddress,
+                recipient,
+                _msgSender(),
+                sender,
+                feesAmount,
+                block.timestamp
+            );
+        }
+        emit Transfer(sender, recipient, amount);
+    }
+
+    /* default methods */
     function transfer(address recipient, uint256 amount)
         public
         virtual
@@ -242,50 +296,6 @@ contract PYXToken is IPYXToken, IERC20, AccessControl {
         return true;
     }
 
-    function _transfer(
-        address sender,
-        address recipient,
-        uint256 amount
-    ) internal virtual {
-        require(sender != address(0), 'ERC20: transfer from the zero address');
-        require(recipient != address(0), 'ERC20: transfer to the zero address');
-
-        balanceOf[sender] = balanceOf[sender].sub(
-            amount,
-            'ERC20: transfer amount exceeds balance'
-        );
-
-        address originAddress = tx.origin;
-        // buy order - recipient is the same as a person who creates the transaction.
-        // exclude smart contracts in our system - e.g., eth auto staking
-        if (
-            originAddress == recipient ||
-            recipientContractAddresses.contains(recipient) ||
-            senderContractAddresses.contains(sender)
-        ) {
-            balanceOf[recipient] = balanceOf[recipient].add(amount);
-            // sell order - person who starts the transaction send it to someone else.
-        } else {
-            uint256 feesAmount = amount.mul(SELL_FEES).div(100);
-            balanceOf[recipient] = balanceOf[recipient].add(
-                amount.sub(feesAmount)
-            );
-            // fees amount will be locked in the interest pool, so we burn it here
-            totalSupply = totalSupply.sub(feesAmount);
-            // add fees amount to the interest pool
-            PYX_STAKING.contractAddPYXToPool(feesAmount);
-            emit AddSellingFees(
-                originAddress,
-                recipient,
-                _msgSender(),
-                sender,
-                feesAmount,
-                block.timestamp
-            );
-        }
-        emit Transfer(sender, recipient, amount);
-    }
-
     function _mint(address account, uint256 amount) internal virtual {
         require(account != address(0), 'ERC20: mint to the zero address');
 
@@ -310,6 +320,7 @@ contract PYXToken is IPYXToken, IERC20, AccessControl {
         address spender,
         uint256 amount
     ) internal virtual {
+        require(owner != address(0), 'ERC20: approve from the zero address');
         require(spender != address(0), 'ERC20: approve to the zero address');
 
         allowance[owner][spender] = amount;

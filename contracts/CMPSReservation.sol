@@ -7,17 +7,17 @@ import '@openzeppelin/contracts/math/SafeMath.sol';
 
 import './interfaces/ICMPSToken.sol';
 
-/*
- * CMPS reservation to be conducted for a limited time before PYX token goes on main net
+/** a contract for presalers to purcahse CMPS using BNB
+ *  note: CMPS is a presale token, it has no value and need to be swapped to PYX token.
  */
 contract CMPSReservation is AccessControl {
     using SafeMath for uint256;
 
     struct Settings {
-        uint256 CMPS_PER_ETH; // the number CMPS per ETH in eth unit
-        uint256 MAX_CMPS_SUPPLY; // the max CMPS supply in eth unit
-        uint256 END_DATE;
-        uint256 MAX_ETH_PER_ACCOUNT; // max eth per account in wei unit
+        uint256 CMPS_PER_ETH; // ETH Unit
+        uint256 MAX_CMPS_SUPPLY; // WEI Unit
+        uint256 MAX_ETH_PER_ACCOUNT; // WEI Unit
+        uint256 END_DATE; // End date of the presale
     }
 
     struct Addresses {
@@ -62,25 +62,26 @@ contract CMPSReservation is AccessControl {
     }
 
     function init(
-        uint256 _cmpsPerEth, // the number CMPS per ETH in eth unit
-        uint256 _maxCMPSSupply, // the max CMPS supply in eth unit
-        uint256 _endDate, // end date of the reservation period
-        uint256 _maxEthPerAccount, // max eth per account in eth unit
+        uint256 _cmpsPerEth, // ETH Unit
+        uint256 _maxCMPSSupply, // ETH Unit
+        uint256 _endDate,
+        uint256 _maxEthPerAccount, // ETH Unit
         address _cmpsToken,
         address payable _recipientAccount
     ) external onlySetter {
         SETTINGS.CMPS_PER_ETH = _cmpsPerEth;
-        SETTINGS.MAX_CMPS_SUPPLY = _maxCMPSSupply;
-        SETTINGS.MAX_ETH_PER_ACCOUNT = _maxEthPerAccount.mul(1e18); // convert eth per account to wei per account
+        SETTINGS.MAX_CMPS_SUPPLY = _maxCMPSSupply.mul(1e18); // convert ETH unit to WEI unit
+        SETTINGS.MAX_ETH_PER_ACCOUNT = _maxEthPerAccount.mul(1e18); // convert ETH unit to WEI unit
         SETTINGS.END_DATE = _endDate;
 
         ADDRESSES.RECIPIENT_ACCOUNT = _recipientAccount;
         ADDRESSES.CMPS_TOKEN = ICMPSToken(_cmpsToken);
 
+        // revoke setter
         renounceRole(SETTER_ROLE, msg.sender);
     }
 
-    /* reserve() to reserve CMPS tokens for the presale price in eth unit */
+    /** external method for the presalers to purchase CMPS using BNB */
     function reserve() external payable {
         require(msg.value > 0, 'CMPSReservation[reserve]: msg.value <= 0');
         require(
@@ -88,23 +89,23 @@ contract CMPSReservation is AccessControl {
             'CMPSReservation[reserve]: block.timestamp > END_DATE'
         );
 
-        // make sure the total reserved is not over the _maxEthPerAccount a restriction on whales
-        uint256 newReservedEth = reservedEthOf[msg.sender] + msg.value;
+        // make sure the total reserved is not over the MAX_ETH_PER_ACCOUNT
+        uint256 newReservedEth = reservedEthOf[msg.sender].add(msg.value);
         require(
             newReservedEth <= SETTINGS.MAX_ETH_PER_ACCOUNT,
             'CMPSReservation[reserve]: newReservedEth > MAX_ETH_PER_ACCOUNT'
         );
 
-        uint256 mintAmount = SETTINGS.CMPS_PER_ETH * msg.value;
-        uint256 newReservedCMPS = reservedCMPS + mintAmount;
+        uint256 mintAmount = SETTINGS.CMPS_PER_ETH.mul(msg.value);
+        uint256 newReservedCMPS = reservedCMPS.add(mintAmount);
 
         // make sure we haven't exceeded the max supply of CMPS
         require(
-            newReservedCMPS <= SETTINGS.MAX_CMPS_SUPPLY * 1e18,
+            newReservedCMPS <= SETTINGS.MAX_CMPS_SUPPLY,
             'CMPSReservation[reserve]: newReservedCMPS > MAX_CMPS_SUPPLY'
         );
 
-        // cmps - mint
+        // [mint] - CMPS
         ADDRESSES.CMPS_TOKEN.mint(msg.sender, mintAmount);
 
         // [state] - reservedCMPS
@@ -118,8 +119,11 @@ contract CMPSReservation is AccessControl {
     }
 
     function withdrawEth() external {
-        uint256 contractEth = address(this).balance; // current eth amount of this contract
-        ADDRESSES.RECIPIENT_ACCOUNT.transfer(contractEth); // transfer all eth to the recipient
+        // current eth amount of this contract
+        uint256 contractEth = address(this).balance;
+
+        // transfer all eth to the recipient
+        ADDRESSES.RECIPIENT_ACCOUNT.transfer(contractEth);
 
         // [event]
         emit WithdrawEth(contractEth, ADDRESSES.RECIPIENT_ACCOUNT, msg.sender);

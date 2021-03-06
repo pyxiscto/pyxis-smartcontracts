@@ -15,20 +15,21 @@ contract PYXStaking is IPYXStaking, AccessControl {
 
     struct UserStaking {
         address account;
-        uint16 steps;
-        uint64 stakingId;
-        uint64 startDate;
-        uint64 unstakeDate;
+        uint256 steps;
+        uint256 stakingId;
+        uint256 startDate;
+        uint256 unstakeDate;
         uint256 pyx;
         uint256 shares;
     }
 
     struct Settings {
-        uint8 LATE_PENALTY_RATE_PER_STEP; // 1
-        uint16 BASE_BONUS_STEPS; // 30
-        uint16 MAX_STAKE_STEPS; // 1820
-        uint16 MAX_LATE_STEPS; // 28
-        uint32 STEP_SECONDS; // 86400
+        uint256 LATE_PENALTY_RATE_PER_STEP; // 1
+        uint256 BASE_BONUS_STEPS; // 30
+        uint256 MAX_STAKE_STEPS; // 1820
+        uint256 MAX_LATE_STEPS; // 28
+        uint256 STEP_SECONDS; // 86400
+        uint256 BURN_PENALTY_RATE; // 5
     }
 
     struct Addresses {
@@ -39,9 +40,9 @@ contract PYXStaking is IPYXStaking, AccessControl {
     event Stake(
         address indexed account,
         address caller,
-        uint16 steps,
-        uint64 startDate,
-        uint64 indexed stakingId,
+        uint256 steps,
+        uint256 startDate,
+        uint256 indexed stakingId,
         uint256 indexed shares,
         uint256 pyx,
         uint256 stakeBonus,
@@ -54,8 +55,8 @@ contract PYXStaking is IPYXStaking, AccessControl {
 
     event Unstake(
         address indexed account,
-        uint64 unstakeDate,
-        uint64 indexed stakingId,
+        uint256 unstakeDate,
+        uint256 indexed stakingId,
         uint256 indexed payoutPYX,
         uint256 penaltyRate,
         uint256 penaltyPYX,
@@ -67,8 +68,8 @@ contract PYXStaking is IPYXStaking, AccessControl {
 
     event UnstakeFullPenalty(
         address indexed caller,
-        uint64 indexed stakingId,
-        uint64 date,
+        uint256 indexed stakingId,
+        uint256 date,
         uint256 indexed pyx
     );
 
@@ -96,10 +97,10 @@ contract PYXStaking is IPYXStaking, AccessControl {
     uint256 public totalStakedShares;
     uint256 public totalUnstakedShares;
 
-    uint64 public currentStakingId;
+    uint256 public currentStakingId;
 
     // stakingId => UserStaking
-    mapping(uint64 => UserStaking) public userStakingOf;
+    mapping(uint256 => UserStaking) public userStakingOf;
 
     // account => stakingId[]
     mapping(address => EnumerableSet.UintSet) private stakingIdsOf;
@@ -144,11 +145,12 @@ contract PYXStaking is IPYXStaking, AccessControl {
     function init(
         address _pyxToken,
         address _autoStaking,
-        uint8 _latePenaltyRatePerStep,
-        uint16 _maxStakeSteps,
-        uint16 _maxLateSteps,
-        uint16 _baseBonusSteps,
-        uint32 _stepSeconds,
+        uint256 _latePenaltyRatePerStep,
+        uint256 _maxStakeSteps,
+        uint256 _maxLateSteps,
+        uint256 _baseBonusSteps,
+        uint256 _stepSeconds,
+        uint256 _burnPenaltyRate,
         address[] calldata _stakerAccounts,
         address[] calldata _pyxAdderAccounts
     ) external onlySetter {
@@ -160,6 +162,7 @@ contract PYXStaking is IPYXStaking, AccessControl {
         SETTINGS.MAX_LATE_STEPS = _maxLateSteps;
         SETTINGS.LATE_PENALTY_RATE_PER_STEP = _latePenaltyRatePerStep;
         SETTINGS.BASE_BONUS_STEPS = _baseBonusSteps;
+        SETTINGS.BURN_PENALTY_RATE = _burnPenaltyRate;
 
         for (uint256 idx = 0; idx < _stakerAccounts.length; idx = idx.add(1)) {
             _setupRole(STAKER_ROLE, _stakerAccounts[idx]);
@@ -176,7 +179,7 @@ contract PYXStaking is IPYXStaking, AccessControl {
         renounceRole(SETTER_ROLE, msg.sender);
     }
 
-    function userStake(uint16 _stakeSteps, uint256 _pyx) external {
+    function userStake(uint256 _stakeSteps, uint256 _pyx) external {
         // pyx - burn
         ADDRESSES.PYX_TOKEN.burn(msg.sender, _pyx);
 
@@ -189,7 +192,7 @@ contract PYXStaking is IPYXStaking, AccessControl {
     /* contract must burn the tokens before calling this method */
     function contractStake(
         address _account,
-        uint16 _stakeSteps,
+        uint256 _stakeSteps,
         uint256 _stakedPYX,
         uint256 _rewardPYX,
         uint256 _stakeBonus
@@ -203,7 +206,7 @@ contract PYXStaking is IPYXStaking, AccessControl {
 
     function _stake(
         address userAccount,
-        uint16 _stakeSteps,
+        uint256 _stakeSteps,
         uint256 _pyx,
         uint256 _stakeBonus
     ) private {
@@ -216,10 +219,10 @@ contract PYXStaking is IPYXStaking, AccessControl {
 
         (uint256 shares, uint256 daysBonus) =
             getShares(_stakeSteps, _pyx, _stakeBonus);
-        uint64 startDate = uint64(block.timestamp);
+        uint256 startDate = block.timestamp;
 
         // state - update
-        uint64 stakingId = currentStakingId;
+        uint256 stakingId = currentStakingId;
         userStakingOf[currentStakingId] = UserStaking({
             account: userAccount,
             steps: _stakeSteps,
@@ -234,7 +237,7 @@ contract PYXStaking is IPYXStaking, AccessControl {
         totalStakedPYX = totalStakedPYX.add(_pyx);
         totalStakedShares = totalStakedShares.add(shares);
 
-        currentStakingId = currentStakingId + 1;
+        currentStakingId = currentStakingId.add(1);
 
         // [event]
         emit Stake(
@@ -254,7 +257,7 @@ contract PYXStaking is IPYXStaking, AccessControl {
         );
     }
 
-    function unstake(uint64 stakingId) external {
+    function unstake(uint256 stakingId) external {
         UserStaking storage userStaking = userStakingOf[stakingId];
         address userAccount = msg.sender;
 
@@ -297,11 +300,15 @@ contract PYXStaking is IPYXStaking, AccessControl {
         }
 
         if (penaltyPYX > 0) {
-            _addPYXToPool(penaltyPYX);
+            _addPYXToPool(
+                penaltyPYX
+                    .mul(uint256(100).sub(SETTINGS.BURN_PENALTY_RATE))
+                    .div(100)
+            );
         }
 
         // state - update
-        uint64 unstakeDate = uint64(block.timestamp);
+        uint256 unstakeDate = block.timestamp;
         userStaking.unstakeDate = unstakeDate;
 
         totalUnstakedPYX = totalUnstakedPYX.add(userStaking.pyx);
@@ -323,7 +330,7 @@ contract PYXStaking is IPYXStaking, AccessControl {
         );
     }
 
-    function unstakeFullPenalty(uint64 stakingId) external {
+    function unstakeFullPenalty(uint256 stakingId) external {
         UserStaking storage userStaking = userStakingOf[stakingId];
 
         require(
@@ -331,9 +338,10 @@ contract PYXStaking is IPYXStaking, AccessControl {
             'PYXStaking[unstakeFullPenalty]: userStaking.unstakeDate != 0'
         );
 
-        uint64 endDate =
-            userStaking.startDate +
-                (SETTINGS.STEP_SECONDS * uint64(userStaking.steps));
+        uint256 endDate =
+            userStaking.startDate.add(
+                (SETTINGS.STEP_SECONDS.mul(userStaking.steps))
+            );
         require(
             block.timestamp > endDate,
             'PYXStaking[unstakeFullPenalty]: the stake is not ended yet'
@@ -347,7 +355,7 @@ contract PYXStaking is IPYXStaking, AccessControl {
             'PYXStaking[unstakeFullPenalty]: the stake is not full penalty'
         );
 
-        uint64 unstakeDate = uint64(block.timestamp);
+        uint256 unstakeDate = block.timestamp;
 
         // state - update
         userStaking.unstakeDate = unstakeDate;
@@ -438,10 +446,10 @@ contract PYXStaking is IPYXStaking, AccessControl {
         uint256 _pyx,
         uint256 _stakeBonus // 0, 20
     ) public view returns (uint256 shares, uint256 daysBonus) {
+        uint256 base = _stakeSteps.mul(_pyx);
+        uint256 stakeBonus = (_stakeBonus.add(100));
         daysBonus = getDaysBonus(_stakeSteps);
-        shares = (_stakeSteps * _pyx * (100 + _stakeBonus) * daysBonus).div(
-            1e20
-        );
+        shares = base.mul(stakeBonus).mul(daysBonus).div(1e20);
     }
 
     function getDaysBonus(uint256 _stakeSteps) public view returns (uint256) {
