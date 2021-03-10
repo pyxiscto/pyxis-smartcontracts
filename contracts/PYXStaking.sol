@@ -77,11 +77,13 @@ contract PYXStaking is IPYXStaking, AccessControl {
 
     event SetAutoStaking(address indexed caller, address indexed autoStaking);
 
+    event UpdateSettings(bytes32 indexed setting, uint256 indexed newValue);
+
     bytes32 public constant SETTER_ROLE = keccak256('SETTER_ROLE');
     bytes32 public constant STAKER_ROLE = keccak256('STAKER_ROLE');
     bytes32 public constant PYX_ADDER_ROLE = keccak256('PYX_ADDER_ROLE');
-    bytes32 public constant AUTO_STAKING_SETTER_ROLE =
-        keccak256('AUTO_STAKING_SETTER_ROLE');
+    bytes32 public constant SETTINGS_MANAGER_ROLE =
+        keccak256('SETTINGS_MANAGER_ROLE');
 
     // SETTINGS
     Settings public SETTINGS;
@@ -113,14 +115,6 @@ contract PYXStaking is IPYXStaking, AccessControl {
         _;
     }
 
-    modifier onlyAutoStakingSetter() {
-        require(
-            hasRole(AUTO_STAKING_SETTER_ROLE, msg.sender),
-            'PYXStaking: Caller is not an auto staking setter'
-        );
-        _;
-    }
-
     modifier onlyStaker() {
         require(
             hasRole(STAKER_ROLE, msg.sender),
@@ -133,6 +127,14 @@ contract PYXStaking is IPYXStaking, AccessControl {
         require(
             hasRole(PYX_ADDER_ROLE, msg.sender),
             'PYXStaking: Caller is not a pyx adder'
+        );
+        _;
+    }
+
+    modifier onlySettingsManager() {
+        require(
+            hasRole(SETTINGS_MANAGER_ROLE, msg.sender),
+            'PYXStaking: Caller is not a settings manager'
         );
         _;
     }
@@ -378,13 +380,41 @@ contract PYXStaking is IPYXStaking, AccessControl {
         _addPYXToPool(_pyx);
     }
 
-    function setAutoStaking(address _autoStaking)
-        external
-        onlyAutoStakingSetter
-    {
+    /** Settings */
+    function setAutoStaking(address _autoStaking) external onlySettingsManager {
         ADDRESSES.AUTO_STAKING = IAutoStaking(_autoStaking);
         emit SetAutoStaking(msg.sender, _autoStaking);
     }
+
+    function setLatePenaltyRatePerStep(uint256 _rate)
+        external
+        onlySettingsManager
+    {
+        SETTINGS.LATE_PENALTY_RATE_PER_STEP = _rate;
+        emit UpdateSettings('LATE_PENALTY_RATE_PER_STEP', _rate);
+    }
+
+    function setBaseBonusSteps(uint256 _steps) external onlySettingsManager {
+        SETTINGS.BASE_BONUS_STEPS = _steps;
+        emit UpdateSettings('BASE_BONUS_STEPS', _steps);
+    }
+
+    function setMaxStakeSteps(uint256 _steps) external onlySettingsManager {
+        SETTINGS.MAX_STAKE_STEPS = _steps;
+        emit UpdateSettings('MAX_STAKE_STEPS', _steps);
+    }
+
+    function setMaxLateSteps(uint256 _steps) external onlySettingsManager {
+        SETTINGS.MAX_LATE_STEPS = _steps;
+        emit UpdateSettings('MAX_LATE_STEPS', _steps);
+    }
+
+    function setBurnPenaltyRate(uint256 _rate) external onlySettingsManager {
+        SETTINGS.BURN_PENALTY_RATE = _rate;
+        emit UpdateSettings('BURN_PENALTY_RATE', _rate);
+    }
+
+    /* end settings */
 
     /* contract must burn the tokens before calling this method */
     function contractAddPYXToPool(uint256 _pyx) external override onlyPYXAdder {

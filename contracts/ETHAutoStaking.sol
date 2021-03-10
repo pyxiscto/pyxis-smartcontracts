@@ -12,7 +12,7 @@ import './interfaces/IPYXToken.sol';
 
 /**
  * this contract is to convert ETH into PYX and then stake interfaces
- * the PYX is purchaed from uniswap for the market price and then staked.
+ * the PYX is purchased from pancakeswap for the market price and then staked.
  */
 contract ETHAutoStaking is AccessControl, IAutoStaking {
     using SafeMath for uint256;
@@ -22,6 +22,7 @@ contract ETHAutoStaking is AccessControl, IAutoStaking {
         uint256 STAKE_BONUS; // 20
         uint256 INFLATION_RATE; // 12
         uint256 INFLATION_RATE_DIVIDER; // 364
+        uint256 STEP_SECONDS; // 86400
     }
 
     struct Addresses {
@@ -56,13 +57,19 @@ contract ETHAutoStaking is AccessControl, IAutoStaking {
         address indexed account
     );
 
+    event UpdateSettings(bytes32 indexed setting, uint256 indexed newValue);
+
     // constants
     bytes32 public constant SETTER_ROLE = keccak256('SETTER_ROLE');
     bytes32 public constant PYX_ADDER_ROLE = keccak256('PYX_ADDER_ROLE');
+    bytes32 public constant SETTINGS_MANAGER_ROLE =
+        keccak256('SETTINGS_MANAGER_ROLE');
 
     // settings
     Settings public SETTINGS;
     Addresses public ADDRESSES;
+    // numDay => open
+    mapping(uint256 => bool) public IS_OPEN_OF;
 
     // states
     uint256 public totalForSalePYX;
@@ -87,6 +94,14 @@ contract ETHAutoStaking is AccessControl, IAutoStaking {
         _;
     }
 
+    modifier onlySettingsManager() {
+        require(
+            hasRole(SETTINGS_MANAGER_ROLE, msg.sender),
+            'ETHAutoStaking: Caller is not a settings manager'
+        );
+        _;
+    }
+
     constructor() public {
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _setupRole(SETTER_ROLE, msg.sender);
@@ -97,6 +112,7 @@ contract ETHAutoStaking is AccessControl, IAutoStaking {
         uint256 _stakeBonus,
         uint256 _inflationRate,
         uint256 _inflationRateDivider,
+        uint256 _stepSeconds,
         address _pyxToken,
         address _pyxStaking,
         address _uniswap,
@@ -107,6 +123,11 @@ contract ETHAutoStaking is AccessControl, IAutoStaking {
         SETTINGS.STAKE_BONUS = _stakeBonus;
         SETTINGS.INFLATION_RATE = _inflationRate;
         SETTINGS.INFLATION_RATE_DIVIDER = _inflationRateDivider;
+        SETTINGS.STEP_SECONDS = _stepSeconds;
+
+        IS_OPEN_OF[6] = true; // wednesday
+        IS_OPEN_OF[1] = true; // friday
+        IS_OPEN_OF[3] = true; // sunday
 
         ADDRESSES.PYX_TOKEN = IPYXToken(_pyxToken);
         ADDRESSES.PYX_STAKING = IPYXStaking(_pyxStaking);
@@ -128,6 +149,12 @@ contract ETHAutoStaking is AccessControl, IAutoStaking {
         require(
             _stakeSteps >= SETTINGS.MIN_AUTO_STAKE_STEPS,
             'ETHAutoStaking[ethStake]: _stakeSteps < SETTINGS.MIN_AUTO_STAKE_STEPS'
+        );
+
+        uint256 numDayInWeek = getNumDayInWeek();
+        require(
+            IS_OPEN_OF[numDayInWeek],
+            'ETHAutoStaking[ethStake]: staking closed'
         );
 
         uint256 pyxAvailableForSale = totalForSalePYX.sub(totalSoldPYX);
@@ -191,6 +218,45 @@ contract ETHAutoStaking is AccessControl, IAutoStaking {
         emit AddForSalePYX(msg.sender, _pyx, totalForSalePYX);
     }
 
+    /* settings */
+    function addStakedDay(uint256 _day) external onlySettingsManager {
+        IS_OPEN_OF[_day] = true;
+        emit UpdateSettings('IS_OPEN_OF:add', _day);
+    }
+
+    function removeStakedDay(uint256 _day) external onlySettingsManager {
+        delete IS_OPEN_OF[_day];
+        emit UpdateSettings('IS_OPEN_OF:remove', _day);
+    }
+
+    function setMinAutoStakeSteps(uint256 _steps) external onlySettingsManager {
+        SETTINGS.MIN_AUTO_STAKE_STEPS = _steps;
+        emit UpdateSettings('MIN_AUTO_STAKE_STEPS', _steps);
+    }
+
+    function setStakeBonus(uint256 _bonus) external onlySettingsManager {
+        SETTINGS.STAKE_BONUS = _bonus;
+        emit UpdateSettings('STAKE_BONUS', _bonus);
+    }
+
+    function setInflationRate(uint256 _inflationRate)
+        external
+        onlySettingsManager
+    {
+        SETTINGS.INFLATION_RATE = _inflationRate;
+        emit UpdateSettings('INFLATION_RATE', _inflationRate);
+    }
+
+    function setInflationRateDivider(uint256 _inflationRateDivider)
+        external
+        onlySettingsManager
+    {
+        SETTINGS.INFLATION_RATE_DIVIDER = _inflationRateDivider;
+        emit UpdateSettings('INFLATION_RATE_DIVIDER', _inflationRateDivider);
+    }
+
+    /* end settings */
+
     function addInflatedForSalePYX(uint256 _stakeSteps, uint256 _pyx)
         external
         override
@@ -216,6 +282,19 @@ contract ETHAutoStaking is AccessControl, IAutoStaking {
             (_pyx.mul(_stakeSteps).mul(SETTINGS.INFLATION_RATE)).div(
                 SETTINGS.INFLATION_RATE_DIVIDER.mul(100)
             );
+    }
+
+    /** timestamp 0 = 00:00:00 UTC Thursday, 1 January 1970
+     * 0 - Thursday
+     * 1 - Friday
+     * 2 - Saturday
+     * 3 - Sunday
+     * 4 - Monday
+     * 5 - Tuesday
+     * 6 - Wednesday
+     */
+    function getNumDayInWeek() public view returns (uint256) {
+        return (block.timestamp / SETTINGS.STEP_SECONDS) % 7;
     }
 
     function _buyBack(uint256 _eth, uint256 _pyxOutMin)
