@@ -77,7 +77,11 @@ contract PYXStaking is IPYXStaking, AccessControl {
 
     event SetAutoStaking(address indexed caller, address indexed autoStaking);
 
-    event UpdateSettings(bytes32 indexed setting, uint256 indexed newValue);
+    event UpdateSettings(
+        bytes32 indexed setting,
+        uint256 indexed newValue,
+        address indexed caller
+    );
 
     bytes32 public constant SETTER_ROLE = keccak256('SETTER_ROLE');
     bytes32 public constant STAKER_ROLE = keccak256('STAKER_ROLE');
@@ -391,27 +395,27 @@ contract PYXStaking is IPYXStaking, AccessControl {
         onlySettingsManager
     {
         SETTINGS.LATE_PENALTY_RATE_PER_STEP = _rate;
-        emit UpdateSettings('LATE_PENALTY_RATE_PER_STEP', _rate);
+        emit UpdateSettings('LATE_PENALTY_RATE_PER_STEP', _rate, msg.sender);
     }
 
     function setBaseBonusSteps(uint256 _steps) external onlySettingsManager {
         SETTINGS.BASE_BONUS_STEPS = _steps;
-        emit UpdateSettings('BASE_BONUS_STEPS', _steps);
+        emit UpdateSettings('BASE_BONUS_STEPS', _steps, msg.sender);
     }
 
     function setMaxStakeSteps(uint256 _steps) external onlySettingsManager {
         SETTINGS.MAX_STAKE_STEPS = _steps;
-        emit UpdateSettings('MAX_STAKE_STEPS', _steps);
+        emit UpdateSettings('MAX_STAKE_STEPS', _steps, msg.sender);
     }
 
     function setMaxLateSteps(uint256 _steps) external onlySettingsManager {
         SETTINGS.MAX_LATE_STEPS = _steps;
-        emit UpdateSettings('MAX_LATE_STEPS', _steps);
+        emit UpdateSettings('MAX_LATE_STEPS', _steps, msg.sender);
     }
 
     function setBurnPenaltyRate(uint256 _rate) external onlySettingsManager {
         SETTINGS.BURN_PENALTY_RATE = _rate;
-        emit UpdateSettings('BURN_PENALTY_RATE', _rate);
+        emit UpdateSettings('BURN_PENALTY_RATE', _rate, msg.sender);
     }
 
     /* end settings */

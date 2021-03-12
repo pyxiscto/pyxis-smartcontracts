@@ -31,6 +31,14 @@ contract PYXToken is IPYXToken, IERC20, AccessControl {
         uint256 time
     );
 
+    event SetSellFees(address indexed caller, uint256 indexed value);
+
+    event UpdateAddress(
+        bytes32 indexed setting,
+        address indexed newValue,
+        address indexed caller
+    );
+
     mapping(address => uint256) public override balanceOf;
     mapping(address => mapping(address => uint256)) public override allowance;
     uint256 public override totalSupply;
@@ -48,8 +56,8 @@ contract PYXToken is IPYXToken, IERC20, AccessControl {
     /* additional constants */
     bytes32 public constant MINTER_ROLE = keccak256('MINTER_ROLE'); // only smart contracts
     bytes32 public constant SETTER_ROLE = keccak256('SETTER_ROLE'); // renounce after init
-    bytes32 public constant ADDRESS_MANAGER_ROLE =
-        keccak256('ADDRESS_MANAGER_ROLE'); // need this to extend the ecosystem (add remove contract addresses)
+    bytes32 public constant SETTINGS_MANAGER_ROLE =
+        keccak256('SETTINGS_MANAGER_ROLE'); // need this to be able to extend the ecosystem.
 
     /* additional modifiers */
     modifier onlyMinter() {
@@ -68,17 +76,17 @@ contract PYXToken is IPYXToken, IERC20, AccessControl {
         _;
     }
 
-    modifier onlyAddressManager() {
+    modifier onlySettingsManager() {
         require(
-            hasRole(ADDRESS_MANAGER_ROLE, msg.sender),
-            'PYXToken: Caller is not an address manager'
+            hasRole(SETTINGS_MANAGER_ROLE, msg.sender),
+            'PYXToken: Caller is not a settings manager'
         );
         _;
     }
 
     constructor() public {
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _setupRole(ADDRESS_MANAGER_ROLE, msg.sender);
+        _setupRole(SETTINGS_MANAGER_ROLE, msg.sender);
         _setupRole(SETTER_ROLE, msg.sender);
     }
 
@@ -124,18 +132,30 @@ contract PYXToken is IPYXToken, IERC20, AccessControl {
         return balanceOf[_account];
     }
 
+    /** settings */
+    function setSellFees(uint256 _fees) external onlySettingsManager {
+        SELL_FEES = _fees;
+        emit SetSellFees(msg.sender, _fees);
+    }
+
     function addRecipientContractAddress(address account)
         external
-        onlyAddressManager
+        onlySettingsManager
     {
         recipientContractAddresses.add(account);
+        emit UpdateAddress('addRecipientContractAddress', account, msg.sender);
     }
 
     function removeRecipientContractAddress(address account)
         external
-        onlyAddressManager
+        onlySettingsManager
     {
         recipientContractAddresses.remove(account);
+        emit UpdateAddress(
+            'removeRecipientContractAddress',
+            account,
+            msg.sender
+        );
     }
 
     function getRecipientContractAddressCount()
@@ -156,16 +176,18 @@ contract PYXToken is IPYXToken, IERC20, AccessControl {
 
     function addSenderContractAddress(address account)
         external
-        onlyAddressManager
+        onlySettingsManager
     {
         senderContractAddresses.add(account);
+        emit UpdateAddress('addSenderContractAddress', account, msg.sender);
     }
 
     function removeSenderContractAddress(address account)
         external
-        onlyAddressManager
+        onlySettingsManager
     {
         senderContractAddresses.remove(account);
+        emit UpdateAddress('removeSenderContractAddress', account, msg.sender);
     }
 
     function getSenderContractAddressCount() external view returns (uint256) {
@@ -199,6 +221,7 @@ contract PYXToken is IPYXToken, IERC20, AccessControl {
         // buy order - recipient is the same as a person who creates the transaction.
         // * exclude smart contract addresses in our system - e.g., auto staking contract
         if (
+            SELL_FEES == 0 ||
             originAddress == recipient ||
             recipientContractAddresses.contains(recipient) ||
             senderContractAddresses.contains(sender)

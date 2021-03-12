@@ -57,7 +57,11 @@ contract ETHAutoStaking is AccessControl, IAutoStaking {
         address indexed account
     );
 
-    event UpdateSettings(bytes32 indexed setting, uint256 indexed newValue);
+    event UpdateSettings(
+        bytes32 indexed setting,
+        uint256 indexed newValue,
+        address indexed caller
+    );
 
     // constants
     bytes32 public constant SETTER_ROLE = keccak256('SETTER_ROLE');
@@ -221,22 +225,22 @@ contract ETHAutoStaking is AccessControl, IAutoStaking {
     /* settings */
     function addStakedDay(uint256 _day) external onlySettingsManager {
         IS_OPEN_OF[_day] = true;
-        emit UpdateSettings('IS_OPEN_OF:add', _day);
+        emit UpdateSettings('IS_OPEN_OF:add', _day, msg.sender);
     }
 
     function removeStakedDay(uint256 _day) external onlySettingsManager {
         delete IS_OPEN_OF[_day];
-        emit UpdateSettings('IS_OPEN_OF:remove', _day);
+        emit UpdateSettings('IS_OPEN_OF:remove', _day, msg.sender);
     }
 
     function setMinAutoStakeSteps(uint256 _steps) external onlySettingsManager {
         SETTINGS.MIN_AUTO_STAKE_STEPS = _steps;
-        emit UpdateSettings('MIN_AUTO_STAKE_STEPS', _steps);
+        emit UpdateSettings('MIN_AUTO_STAKE_STEPS', _steps, msg.sender);
     }
 
     function setStakeBonus(uint256 _bonus) external onlySettingsManager {
         SETTINGS.STAKE_BONUS = _bonus;
-        emit UpdateSettings('STAKE_BONUS', _bonus);
+        emit UpdateSettings('STAKE_BONUS', _bonus, msg.sender);
     }
 
     function setInflationRate(uint256 _inflationRate)
@@ -244,7 +248,7 @@ contract ETHAutoStaking is AccessControl, IAutoStaking {
         onlySettingsManager
     {
         SETTINGS.INFLATION_RATE = _inflationRate;
-        emit UpdateSettings('INFLATION_RATE', _inflationRate);
+        emit UpdateSettings('INFLATION_RATE', _inflationRate, msg.sender);
     }
 
     function setInflationRateDivider(uint256 _inflationRateDivider)
@@ -252,7 +256,11 @@ contract ETHAutoStaking is AccessControl, IAutoStaking {
         onlySettingsManager
     {
         SETTINGS.INFLATION_RATE_DIVIDER = _inflationRateDivider;
-        emit UpdateSettings('INFLATION_RATE_DIVIDER', _inflationRateDivider);
+        emit UpdateSettings(
+            'INFLATION_RATE_DIVIDER',
+            _inflationRateDivider,
+            msg.sender
+        );
     }
 
     /* end settings */
