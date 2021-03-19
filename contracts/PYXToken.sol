@@ -259,6 +259,7 @@ contract PYXToken is IPYXToken, IERC20, AccessControl {
         override
         returns (bool)
     {
+        require(recipient != address(this));
         _transfer(_msgSender(), recipient, amount);
         return true;
     }
